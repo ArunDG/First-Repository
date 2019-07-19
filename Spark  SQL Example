@@ -1,0 +1,260 @@
+#Launch an spark
+spark-shell --master yarn --conf spark.ui.port=12567
+
+# Create database in hive
+
+create database ArunSelja_Retail_DB_TXT;
+
+use ArunSelja_Retail_DB_TXT;
+
+create table orders2 (
+orderid int,
+order_date string,
+order_customer_id int,
+status STRING)
+row format delimited fields terminated by ',' stored as textfile;
+## create dynamic partiton table and insert data
+
+create table orders3 (
+orderid int,
+order_date string,
+order_customer_id int)
+partitioned by (status STRING)
+row format delimited fields terminated by ',' stored as textfile;
+set.hive.exec.dynamic.partition.mode=nonstrict
+from orders
+insert overwrite table orders3 partition(status) select orderid,
+order_date,
+order_customer_id,status;
+
+
+Show tables;
+load data local inpath '/data/retail_db/orders' into table orders2;
+load data local inpath '/data/retail_db/orders' into table orders1 partition(status);
+hive.exec.dynamic.partition.mode=nonstrict
+
+create table order_item (
+order_item_id int,
+order_item_order_id int,
+order_item_product_id int,
+order_item_quantity int,
+order_item_subtotal float,
+order_item_product_price float
+)
+row format delimited fields terminated by ',' stored as textfile;
+
+load data local inpath '/data/retail_db/order_items' into table order_item;
+
+select * from order_item limit 10;
+
+##Creating and storing data in ORC file format
+
+create database ArunSelja_Retail_DB_ORC;
+use ArunSelja_Retail_DB_ORC;
+
+create table orders (
+orderid int,
+order_date string,
+order_customer_id int,
+status string
+) stored as orc;
+
+create table order_item (
+order_item_id int,
+order_item_order_id int,
+order_item_product_id int,
+order_item_quantity int,
+order_item_subtotal float,
+order_item_product_price float
+)stored as orc
+
+select * from orders limit 10;
+
+## to get detailed information about the table
+describe formatted order_item;
+
+## load the data (load the data  from text file format to orc file)
+
+insert into orders select * from ArunSelja_Retail_DB_TXT.orders;
+insert into order_item select * from ArunSelja_Retail_DB_TXT.order_item;
+
+## Execute sql query from the spark-shell
+
+spark-shell --master yarn --conf spark.ui.port=12654
+
+sqlContext.sql("use ArunSelja_Retail_DB_TXT")
+sqlContext.sql("show tables").show
+sqlContext.sql("select * from orders").show
+
+## Explore functions
+describe function year ( to know the functionality of function)
+
+create table customers (
+customerid int,
+customer_fname varchar(45),
+customer_lname varchar(45),
+customer_email varchar(45),
+customer_password varchar(45),
+customer_street varchar(255),
+customer_city varchar(45),
+customer_state varchar(45),
+customer_zipcode varchar(45)
+)
+row format delimited fields terminated by ',' stored as textfile;
+load data local inpath '/data/retail_db/customers' into table customers;
+select * from customers limit 10;
+
+String functions:
+----------------
+substr,length,ltrim,cast,rtrim,trim,length,ucase,lcase,instr,like,rlike,lpad,rpad,cat,
+concat
+
+select substr(customer_fname,2,5) from customers limit 10;
+select concat(ucase(customer_fname),'-',lcase(customer_lname)) from customers limit 10;
+select trim(customer_password),customer_password from customers limit 10;
+select customer_fname from customers where lcase(customer_fname) like 'f%'  limit 10;
+select customer_fname from customers where lcase(customer_fname) like '%a%'  limit 20;
+select lpad(customer_fname,length(customer_fname)+1,0) from customers limit 10;
+select trim(" hello world  ")
+select cast(substr(order_date,6,2) as int) from orders limit 10;
+
+Date Functions:
+----------------
+current_date,date_add,date_format,date_sub,datediff,day,dayofmonth,todate,
+from_unix_timestamp,to_utc_timestamp,minute,month,month_between,next_day,qtr
+
+describe function date_format
+select current_timestamp
+select date_add(current_date,10);
+select date_sub(current_date,10);
+select to_date(current_timestamp);
+select to_unix_timestamp(current_date);
+select to_date(from_unixtime(1560657600));
+select month(order_date) from orders limit to 10;
+
+Aggregate functions:
+--------------------
+select count(distinct status) from orders;
+select count(distinct order_item_product_id) from order_item;
+
+Conditional Functions in hive:
+-------------
+(case,nvl,is null,)
+## example of case function
+select case  when status='CANCELED' then 'CANCELED' 
+when status in ('PENDING','PENDING_PAYMENT','ON_HOLD','PROCESSING','SUSPECTED_FRAUD') then 'PENDING' 
+When status='COMPLETE' then 'COMPLETE' else 'Nothing' end as status1 from orders limit 10;
+
+## example of nlv and is null
+select status is null as miss, nvl(status,'missing') from orders limit 100;
+select status from orders where status is null; 
+
+Row Levele Transformations:
+--------------------------
+## Converting string into date
+select cast(concat(substr(order_date,1,4),substr(order_date,6,2))as int)from orders limit 10;
+select cast(date_format(order_date,'MMYYYY')as int)from orders limit 10;
+
+Window Functions:
+------------------
+select * from order_item limit 10;
+
+#Get previouse price of the product
+select order_item_product_id,order_item_product_price,lead(order_item_product_price)over (partition by order_item_product_id)  as test from order_item limit 10;
+
+#Get the first value of the each category
+select order_item_product_id,first_value(order_item_product_price))over (partition by order_item_product_id)  as test from order_item limit 10;
+
+#Get the last value of the each category
+select order_item_product_id,last_value(order_item_product_price)over (partition by order_item_product_id)  as test from order_item limit 10;
+
+#Get the count of  of the each category
+select order_item_product_id,count(order_item_product_id)over (partition by order_item_product_id)  as test from order_item limit 10;
+select order_item_product_id,count(order_item_product_id) as test from order_item group by order_item_product_id limit 10;
+
+#Get the running total for each product
+select order_item_product_id,order_item_subtotal,sum(order_item_subtotal)over (partition by order_item_product_id )  as test from order_item limit 10;
+
+## Joining multiple tables (nested query is very low in hive)
+select a.*,b.* from customers a join orders b on a.customerid=b.order_customer_id limit 10;
+select count(1) from customers a left join orders b on a.customerid=b.order_customer_id where b.order_customer_id is null;
+select count(1) from customers a right join orders b on a.customerid=b.order_customer_id where b.order_customer_id is null;
+select count(*) from customers where customerid not in (select distinct order_customer_id from orders);
+
+Aggerigation
+-------------
+## get count of order status
+select count(status),status from orders group by status;
+
+## get revenu from each order
+select  o.orderid,sum(oi.order_item_subtotal) revenue from orders o join order_item oi on o.orderid=oi.order_item_order_id group by o.orderid having revenue>1000;
+
+## compute revenue for order date
+select  o.order_date,sum(oi.order_item_subtotal) revenue from orders o join order_item oi on o.orderid=oi.order_item_order_id 
+group by o.order_date having revenue>1000 distribute by o.order_date sort by o.order_date,revenue desc ;
+
+window and analytic functions
+------------------------------
+select * from (
+select  o.orderid,o.order_date,status,oi.order_item_subtotal,sum(oi.order_item_subtotal) over (partition by o.orderid) revenue,
+oi.order_item_subtotal/sum(oi.order_item_subtotal)over (partition by o.orderid)pct from orders o join order_item oi on o.orderid=oi.order_item_order_id ) q
+where revenue>1000 order by orderid,revenue desc limit 100;
+
+## Ranking
+select * from (
+select  o.orderid,o.order_date,status,oi.order_item_subtotal,sum(oi.order_item_subtotal) over (partition by o.orderid) revenue,
+oi.order_item_subtotal/sum(oi.order_item_subtotal)over (partition by o.orderid)pct, 
+rank()over (partition by o.orderid order by oi.order_item_subtotal desc) rnk_revenue,
+dense_rank()over (partition by o.orderid order by oi.order_item_subtotal desc) denrnk_revenue 
+from orders o join order_item oi on o.orderid=oi.order_item_order_id ) q 
+where revenue>5000 order by orderid,revenue desc ;
+
+percent_rank()over (partition by o.orderid,order by oi.order_item_subtotal desc) pct_revenue, 
+row_number()over (partition by o.orderid,order by oi.order_item_subtotal desc) row_revenue, 
+row_number()over (partition by o.orderid) row1_revenue 
+
+## windowing function (lead,lag,first value,last value)
+select * from (
+select  o.orderid,o.order_date,status,oi.order_item_subtotal,sum(oi.order_item_subtotal) over (partition by o.orderid) revenue,
+oi.order_item_subtotal/sum(oi.order_item_subtotal)over (partition by o.orderid)pct, 
+lag(oi.order_item_subtotal)over (partition by o.orderid ) rnk_revenue,
+lead(oi.order_item_subtotal)over (partition by o.orderid ) rnk_revenue1,
+first_value(oi.order_item_subtotal)over (partition by o.orderid ) rnk_revenue2,
+last_value(oi.order_item_subtotal)over (partition by o.orderid ) rnk_revenue3 
+from orders o join order_item oi on o.orderid=oi.order_item_order_id ) q 
+where revenue>5000 order by orderid,revenue desc ;
+
+Use Case for registere temp table
+---------------------------------
+val orderrdd=sc.textFile("/public/retail_db/orders")
+orderrdd.take(10)
+
+val orderdf=orderrdd.map(x=>{
+(x.split(",")(0).toInt,x.split(",")(1),x.split(",")(2).toInt,x.split(",")(3))}).toDF("order_id","order_date","customer_id","status")
+orderdf.printSchema
+orderdf.registerTempTable("orders")
+sqlContext.sql("select * from orders limit 10").show
+
+val productraw=scala.io.Source.fromFile("/data/retail_db/products/part-00000").getLines().toList
+
+productraw.take(10).foreach(println)
+
+val productrdd=sc.parallelize(productraw)
+val productdf=productrdd.map(x=>(x.split(",")(0),x.split(",")(2))).toDF("Product_id","product_name")
+productdf.show
+productdf.registerTempTable("product")
+sqlContext.sql("select * from product limit 10").show
+
+sqlContext.sql("use ArunSelja_Retail_DB_TXT")
+sqlContext.sql("show tables").show
+
+## Set fallowing option to run spark sql query faster
+sqlContext.setConf("spark.sql.shuffle.partitions","2") 
+
+sqlContext.sql("select product_name,o.order_date,sum(order_item_subtotal)revenue "+
+"from orders o join order_item oi on "+
+"o.order_id=oi.order_item_order_id "+
+"join product p on p.product_id=oi.order_item_product_id "+
+"where o.status in ('CLOSED','COMPLETE') "+
+"group by o.order_date,p.product_name "+
+"order by order_date,revenue desc").show
